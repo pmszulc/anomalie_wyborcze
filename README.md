@@ -1,4 +1,4 @@
-Analiza dowodów manipulacji w wyborach 2025 obecnych w przestrzeni publicznej
+Model detekcji anomalii wyborczych w wyborach prezydenckich
 ================
 
-[https://danetyka.com/protest-wyborczy-2025/](https://danetyka.com/protest-wyborczy-2025/)
+[https://danetyka.com/model-detekcji-anomalii/](https://danetyka.com/model-detekcji-anomalii/)
