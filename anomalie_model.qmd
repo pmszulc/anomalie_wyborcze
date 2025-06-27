@@ -47,7 +47,7 @@ Porównanie z wynikami pierwszej tury odbywa się na podstawie modelu regresji l
 
 7. Model bazuje na wynikach kandydatów, których nie ma w drugiej turze, więc w pewnym sensie szacuje przepływy głosów. Zakłada on jednak, że są one takie same w całej Polsce (np. w każdej gminie), co prawie na pewno nie jest prawdą. To powoduje, że część anomalii wykrytych przez taki model może dać się wyjaśnić przez inny przepływ głosów akurat w tym miejscu. Zbudowałem dodatkowy modelu, w którym dla każdego województwa przepływy mogły być inne (interakcja wszystkich zmiennych z województwem), ale wpływ na wyniki był minimalny. Schodzenie niżej, na poziom powiatów lub gmin, jest już problematyczne, bo bardzo mocno rośnie liczba parametrów, więc model może nadmiernie dopasować się do danych.
 
-8. Anomalie są wskazywane na podstawie reszt z modelu (studentyzowanych). Reszta dodatnia oznacza, że oficjalny wynik Trzaskowskiego jest większy niż prognozowany, a takim razie -- jeśli jest to wynik pomyłki lub oszustwa -- jest ona na jego korzyść. Jeśli reszta jest ujemna, potencjalna pomyłka lub oszustwo były na korzyść Nawrockiego. Ponieważ wiemy, jak takie reszty powinny się rozkładać (rozkład t-Studenta; przy założeniu poprawnej specyfikacji modelu), możemy dla każdej z nich policzyć p-wartość. W uproszczeniu, przy jej pomocy możemy określić komisje, którym wynik drugiej tury jest ekstremalnie mało prawdopodobny, porównując z wynikami pierwszej. Następnie jest stosowana korekta Bonferroniego i za anomalię traktuję tę obserwację (komisję), dla której p-wartość jest mniejsza od 0,05. Podaję też wyniki dla maksymalnie liberalnego podejścia, w którym nie stosuję żadnej korekty.
+8. Anomalie są wskazywane na podstawie reszt z modelu (studentyzowanych). Reszta dodatnia oznacza, że oficjalny wynik Trzaskowskiego jest większy niż prognozowany, a takim razie -- jeśli jest to wynik pomyłki lub oszustwa -- jest ona na jego korzyść. Jeśli reszta jest ujemna, potencjalna pomyłka lub oszustwo były na korzyść Nawrockiego. Ponieważ wiemy, jak takie reszty powinny się rozkładać (rozkład t-Studenta; przy założeniu poprawnej specyfikacji modelu), możemy dla każdej z nich policzyć p-wartość. W uproszczeniu, przy jej pomocy możemy określić komisje, którym wynik drugiej tury jest ekstremalnie mało prawdopodobny, porównując z wynikami pierwszej. Następnie jest stosowana korekta Bonferroniego i za anomalię traktuję tę obserwację (komisję), dla której p-wartość jest mniejsza od 0,05 (jeśli uważamy, że możemy sobie pozwolić na więcej fałszywych odkryć, zamiast korekty Bonferroniego można zastosować np. korektę Benjamini-Hochberga, która kontroluje FDR, a nie FWER). Podaję też wyniki dla maksymalnie liberalnego podejścia, w którym nie stosuję żadnej korekty.
 
 9. Model nie wychwytuje wszystkich anomalii, ale tylko takie przypadki, w których wyniki drugiej tury znacząco różnią się od pierwszej. W szczególności nie wykrywa sytuacji, w której oszustwa dokonano w obu turach (wystarczająco konsekwentnie). Oprócz tego niektóre anomalie mogą świadczyć o tym, że to w pierwszej turze popełnione błąd, nie w pierwszej. Natomiast model nie wykrywa tylko anomalii z odwróceniem wyniku (co na pewno miało miejsce np. w komisji nr 95 Krakowie), ale każdy przypadek, w którym wynik nie jest taki, jaki "powinien" być.
 
@@ -114,7 +114,7 @@ out_df <- tibble(
   bonf.p = out_test$bonf.p
 ) %>% 
   filter(p < 0.05)
-out_df %>% filter(bonf.p < 0.05) # tylko 42 obs.
+out_df %>% filter(bonf.p < 0.05) # 42 obs.
 
 anomalie <- wyb25_lm %>%
   mutate(obs = as.character(row_number())) %>% 
@@ -327,7 +327,7 @@ summary(m_lm)
 vif(m_lm)
 mean(abs(wyb15_lm$Komorowski_2 - predict(m_lm))) # MAE 2.21
 
-out_test <- car::outlierTest(m_lm, cutoff = Inf, n.max = 2000)
+out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 2000)
 out_df <- tibble(
   obs = names(out_test$rstudent),
   rstudent = out_test$rstudent,
@@ -369,6 +369,101 @@ anomalie %>%
     Duda_N, Duda_pred_N), sum)) %>% 
   mutate(Trzask = Komorowski_N - Komorowski_pred_N, 
     Nawr = Duda_N - Duda_pred_N)
+```
+
+## Zbiór treningowy i testowy
+
+Na koniec przedstawię jeszcze jedno podejście, które wydaje mi się interesujące. W podanym wyżej można mieć wątpliwości, czy jeśli do oszacowania parametrów modelu używamy danych, w których występują anomalie, to czy te parametry są wiarygodne. Od razu odpowiedzmy, że tak, co wynika głównie z tego, że takich odstających przypadków jest bardzo mało (a model, po zastosowaniu ograniczeń, był budowany na ponad 26 tysiącach obserwacji). Dodatkowo bazujemy na resztach studentyzowanych, które są liczone z pominięciem "podejrzanej" obserwacji.
+
+Czasem stosuje się takie podejście, że obserwacje odstające usuwa się iteracyjnie, tzn. po usunięciu jednej (lub więcej) buduje się model od nowa. Problem z tym podejściem jest taki, że w pewnym sensie zaczynamy sztucznie zawyżać stopień dopasowania modelu (zaniżać błąd standardowy), bo usuwamy akurat te przypadki, które najbardziej mu przeszkadzają. To może skutkować nadmiarową liczbą odstających obserwacji w kolejnych iteracjach. Oprócz tego trzeba uważać, by model nie miał zbyt dużej liczby parametrów (nie był zbyt elastyczny), bo wtedy może nadmiernie dopasować się do danych -- na tyle, że anomalie staną się dla niego "wyjaśnialne" (pozornie).
+
+Dlatego możemy zastosować podejście, które jest typowe w uczeniu maszynowym. Losujemy połowę (lub inną proporcję) obserwacji, która staje się zbiorem treningowym, na którym budujemy model. Następnie używamy go na zbiorze testowym (pozostałe obserwacje) i tylko tam szukamy anomalii. W ten sposób nie wytypujemy wszystkich, ale wystarczająco dokładnie określimy ich liczbę oraz oszacujemy liczbę straconych głosów dla każdego z kandydatów: wystarczy obliczone wartości pomnożyć przez 2 (lub inną liczbę, gdy wybierzemy inny podział na zbiory).
+
+Co nam to daje? Ponieważ model nie zna danych ze zbioru testowego, nie jest w stanie się do nich dopasować. Dzięki temu mamy znacznie więcej możliwości, jeśli chodzi o jego budowę. Możemy np. pogrupować komisje geograficznie i dorzucić taką informację do modelu jako interakcję. Zamiast regresji możemy skorzystać ze znacznie bardziej elastycznych, nieliniowych modeli. Innymi słowy, możemy przeprowadzić więcej eksperymentów, czego skutkiem będzie budowa modelu, który lepiej przybliża rzeczywiste zależności.
+
+Następnie stosujemy taki model na drugiej połowie danych i szukamy anomalii przy pomocy reszt. Możemy podejść do tego bardziej liberalnie i zostawić nietypowe komisje (np. małe lub zagraniczne), które następnie odrzucimy po pogłębionej analizie. Na przykład, po zastosowaniu przeze mnie takiego podejścia dla wyborów z 2025 roku, została wytypowana komisja nr 3 w Ustroniu Morskim, w której Trzaskowski otrzymał znacznie mniej głosów, niż prognozował to model. Natomiast w tej komisji radykalnie zwiększyła się liczba uprawnionych: z 730 do 1441, co dobrze tłumaczy taki wynik. Oczywiście warto się w takich wypadkach zastanowić, czy sam wzrost liczby uprawnionych nie jest podejrzany, natomiast w tym przypadku najpewniej są to osoby będące na urlopie, które zostały dopisane do listy.
+
+```{r}
+#| include: false
+#| eval: false
+
+wyb25proc <- wyb25proc %>% 
+  mutate(Nupr_roznica = (Nupr_2 / Nupr_1 - 1) * 100) %>%
+  mutate(Frekwencja_roznica =  (N_2 / Nupr_2 - N_1 / Nupr_1) * 100) %>% 
+  mutate(N_roznica = (N_2 - N_1) / N_1 * 100) 
+
+set.seed(42)
+n <- nrow(wyb25proc)
+ind <- sample(1:n, n/2)
+train <- slice(wyb25proc, ind)
+test <- slice(wyb25proc, -ind)
+
+train <- train %>%
+  filter(
+    N_roznica > -8, N_roznica < 23,
+    Nupr_roznica > -5, Nupr_roznica < 7,
+    Frekwencja_roznica > -4, Frekwencja_roznica < 13
+  ) %>% 
+  filter(N_2 >= 200) %>% 
+  filter(Typ_obwodu == "stały")
+
+train %>% 
+  ggplot(aes(Frekwencja_roznica)) +
+  geom_histogram()
+train %>% 
+  ggplot(aes(N_roznica)) +
+  geom_histogram()
+train %>% 
+  ggplot(aes(Nupr_roznica)) +
+  geom_histogram()
+
+m_lm <- lm(Trzaskowski_2 ~ Bartoszewicz_1 + Biejat_1 + Braun_1 + Hołownia_1 + 
+  Jakubiak_1 + Maciak_1 + Mentzen_1 + Senyszyn_1 + Stanowski_1 + Trzaskowski_1 +
+    Woch_1 + Zandberg_1 + Nupr_roznica + Frekwencja_roznica, data = train)
+summary(m_lm)
+mean(abs(train$Trzaskowski_2 - predict(m_lm))) # MAE 1.48
+
+# Usuwanie anomalii (liberalny próg)
+out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 2000)
+out_df <- tibble(
+  obs = names(out_test$rstudent),
+  rstudent = out_test$rstudent,
+  p = out_test$p,
+  bonf.p = out_test$bonf.p
+) %>% 
+  filter(p < 0.05)
+out_df %>% filter(bonf.p < 0.05) # 20
+
+ind <- out_df %>% 
+  filter(p < 0.05) %>% # 573
+  pull(obs) %>% 
+  as.numeric()
+train <- slice(train, -ind)
+m_lm <- lm(Trzaskowski_2 ~ Bartoszewicz_1 + Biejat_1 + Braun_1 + Hołownia_1 + 
+  Jakubiak_1 + Maciak_1 + Mentzen_1 + Senyszyn_1 + Stanowski_1 + Trzaskowski_1 +
+  Woch_1 + Zandberg_1 + Nupr_roznica + Frekwencja_roznica, data = train)
+summary(m_lm) # R2 0.9915
+mean(abs(train$Trzaskowski_2 - predict(m_lm))) # MAE 1.28
+
+test <- test %>% 
+  filter(Typ_obwodu == "stały", N_2 >= 200) 
+test <- test %>% 
+  mutate(Trzaskowski_2_pred = predict(m_lm, test)) %>% 
+  mutate(reszta = Trzaskowski_2 - Trzaskowski_2_pred) %>% 
+  mutate(reszta = (reszta - mean(reszta)) / sd(reszta)) %>% 
+  mutate(p = 2 * pnorm(-abs(reszta))) %>% # p-wartość, przybliżenie N(0,1)
+  mutate(p_BH = p.adjust(p, method = "BH")) %>% 
+  mutate(p_Bonf = p.adjust(p, method = "bonferroni"))
+
+test %>% 
+  summarise(sum(p_BH < 0.05), sum(p_Bonf < 0.05)) # 71 i 34
+# korekta Holma zwraca tyle samo co Bonf
+
+test %>% 
+  select(Gmina, Komisja, N_2, Trzaskowski_2, Trzaskowski_2_pred, p_Bonf) %>%
+  filter(p_Bonf < 0.05) %>% 
+  arrange(p_Bonf)
+# Np. Ustronie Morskie: wzrost liczby uprawnionych z 730 do 1441
 ```
 
 ## Podsumowanie
