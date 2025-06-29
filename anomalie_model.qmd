@@ -45,7 +45,7 @@ Porównanie z wynikami pierwszej tury odbywa się na podstawie modelu regresji l
 
 6. Współczynnik R^2 dla modelu wynosi 98,5%, średni błąd bezwzględny 1,5 p.p. (prognozując wyniki drugiej na podstawie pierwszej, mylimy się średnio jedynie o 1,5 p.p.). Czyli model jest bardzo dokładny, natomiast nie ma możliwości, by nadmiernie dopasował się do dodanych (to uniemożliwiłoby detekcję anomalii), bo jest bardzo mało elastyczny (regresja liniowa, 14 zmiennych niezależnych).
 
-7. Model bazuje na wynikach kandydatów, których nie ma w drugiej turze, więc w pewnym sensie szacuje przepływy głosów. Zakłada on jednak, że są one takie same w całej Polsce (np. w każdej gminie), co prawie na pewno nie jest prawdą. To powoduje, że część anomalii wykrytych przez taki model może dać się wyjaśnić przez inny przepływ głosów akurat w tym miejscu. Zbudowałem dodatkowy modelu, w którym dla każdego województwa przepływy mogły być inne (interakcja wszystkich zmiennych z województwem), ale wpływ na wyniki był minimalny. Schodzenie niżej, na poziom powiatów lub gmin, jest już problematyczne, bo bardzo mocno rośnie liczba parametrów, więc model może nadmiernie dopasować się do danych.
+7. Model bazuje na wynikach kandydatów, których nie ma w drugiej turze, więc w pewnym sensie szacuje przepływy głosów. Zakłada on jednak, że są one takie same w całej Polsce (np. w każdej gminie), co prawie na pewno nie jest prawdą. To powoduje, że część anomalii wykrytych przez taki model może dać się wyjaśnić przez inny przepływ głosów akurat w tym miejscu. Zbudowałem dodatkowy modelu, w którym dla każdego województwa przepływy mogły być inne (interakcja wszystkich zmiennych z województwem), ale wpływ na wyniki był minimalny. Schodzenie niżej, na poziom powiatów lub gmin, jest już problematyczne, bo bardzo mocno rośnie liczba parametrów, więc model może nadmiernie dopasować się do danych. Natomiast takie lokalne różnice można uwzględnić w błędzie losowym (autokorelacja przestrzenna) i wydaje się, że taki model byłby w tym problemie lepszy. Z drugiej strony, jeśli mielibyśmy do czynienia z lokalnymi fałszerstwami (dokonano ich w wielu komisjach, które są blisko), wtedy lepsze jest zaprezentowane tutaj podejście.
 
 8. Anomalie są wskazywane na podstawie reszt z modelu (studentyzowanych). Reszta dodatnia oznacza, że oficjalny wynik Trzaskowskiego jest większy niż prognozowany, a takim razie -- jeśli jest to wynik pomyłki lub oszustwa -- jest ona na jego korzyść. Jeśli reszta jest ujemna, potencjalna pomyłka lub oszustwo były na korzyść Nawrockiego. Ponieważ wiemy, jak takie reszty powinny się rozkładać (rozkład t-Studenta; przy założeniu poprawnej specyfikacji modelu), możemy dla każdej z nich policzyć p-wartość. W uproszczeniu, przy jej pomocy możemy określić komisje, którym wynik drugiej tury jest ekstremalnie mało prawdopodobny, porównując z wynikami pierwszej. Następnie jest stosowana korekta Bonferroniego i za anomalię traktuję tę obserwację (komisję), dla której p-wartość jest mniejsza od 0,05 (jeśli uważamy, że możemy sobie pozwolić na więcej fałszywych odkryć, zamiast korekty Bonferroniego można zastosować np. korektę Benjamini-Hochberga, która kontroluje FDR, a nie FWER). Podaję też wyniki dla maksymalnie liberalnego podejścia, w którym nie stosuję żadnej korekty.
 
@@ -53,9 +53,9 @@ Porównanie z wynikami pierwszej tury odbywa się na podstawie modelu regresji l
 
 10. Reszty z modelu mają rozkład symetryczny. Po usunięciu anomalii (tych, co do których możemy mieć dużą pewność, czyli 42 obserwacji), ich rozkład nie jest normalny, kurtoza jest większa (1,5). Może to wynikać z tego, że w pozostałych obserwacjach o dużych resztach wciąż kryje się wiele takich, które mogą być rezultatem pomyłki lub oszustwa --- natomiast pewność co do tego jest mniejsza. Powody mogą być też inne, łącznie z takim, że liniowe przybliżenie zależności z wynikami pierwszej tury jest niewystarczające.
 
-11. Na podstawie modelu można wskazać ograniczoną liczbę anomalii, bo ostatecznie wszystkie reszty muszą się zerować, co wskazywałoby na pełną symetrię. Natomiast nie ma żadnego powodu, żeby ta symetria wystąpiła, gdy analizujemy np. 100 największych reszt.
+11. Na podstawie modelu można wskazać ograniczoną liczbę anomalii, bo ostatecznie wszystkie reszty muszą się zerować, co wskazywałoby na pełną symetrię. Natomiast nie ma żadnego powodu, żeby ta symetria wystąpiła, gdy analizujemy największe reszty. Ten temat zostanie omówiony niżej ("Czy model jest w stanie wykryć anomalie w jednym kierunku?").
 
-12. Korzystając z modeli typu regresja, możliwości wykrycia systematycznych oszustw (a nie anomalii) są niewielkie. Mimo to wciąż możemy próbować coś powiedzieć o możliwych problemach systemowych, np. na podstawie ogólnych statystyk dotyczących jakości modelu. Model dla 2025 roku ma bardzo wysoki współczynniki R^2 (prawie 99%). Jeśli w kolejnych wyborach taki współczynnik wyniósłby np. 80%, byłoby to niepokojące.
+12. Korzystając z modeli typu regresja, możliwości wykrycia systematycznych oszustw (a nie anomalii) również są ograniczone. Mimo to wciąż możemy próbować coś powiedzieć o możliwych problemach systemowych, np. na podstawie ogólnych statystyk dotyczących jakości modelu. Model dla 2025 roku ma bardzo wysoki współczynniki R^2 (prawie 99%). Jeśli w kolejnych wyborach taki współczynnik wyniósłby np. 80%, byłoby to niepokojące.
 
 ```{r}
 #| include: false
@@ -257,7 +257,10 @@ out_df <- tibble(
   bonf.p = out_test$bonf.p
 ) %>% 
   filter(p < 0.05)
-out_df %>% filter(bonf.p < 0.05) # 43
+anomalie2020 <- out_df %>% 
+  filter(bonf.p < 0.05) %>% # 43
+  pull(obs) %>% 
+  as.numeric()
 
 anomalie <- wyb20_lm %>%
   mutate(obs = as.character(row_number())) %>% 
@@ -369,6 +372,94 @@ anomalie %>%
     Duda_N, Duda_pred_N), sum)) %>% 
   mutate(Trzask = Komorowski_N - Komorowski_pred_N, 
     Nawr = Duda_N - Duda_pred_N)
+```
+
+## Czy model jest w stanie wykryć anomalie w jednym kierunku?
+
+Ważne pytanie, jakie warto postawić, to jakie są możliwości zaproponowanego podejścia. W szczególności, czy jeśli dokonano fałszerstw głównie na rzecz jednego kandydata (wtedy już raczej można mówić o fałszerstwach, bo pomyłki są zwykle symetryczne), to czy jesteśmy w stanie to wykryć? Tę wątpliwość można mieć dlatego, że regresja jest ostatecznie w pełni symetryczna, tzn. suma wszystkich reszt wynosi zero.
+
+Wykonałem następującą symulację. Na danych z wyborów 2020 wykonuję detekcję anomalii swoją metodą, a następnie usuwam je (43 obserwacje). Zakładam, że uzyskane w ten sposób dane są oczyszczone z problematycznych przypadków. Następnie sam dokonuję fałszerstw, ale tylko na rzecz jednego kandydata. Losuję 200 komisji, w których Trzaskowski otrzymał od 55% do 60% głosów, a następnie zamieniam jego wyniki z wynikami Dudy (czyli zaniżam wyniki Trzaskowskiego o 10-20 p.p.)
+
+W ten sposób otrzymuję całkowitą asymetrię, fałszerstwa tylko na rzecz jednego kandydata. Następnie jeszcze raz stosuję swoje podejście na takich danych, tzn. dopasowuję nowy model i szukam anomalii. Znajduję 169 z nich, żadnego wyniku fałszywie dodatniego. Innymi słowy, nawet w przypadku całkowitej asymetrii metoda poprawnie wskazuje anomalie.
+
+Nie udało się znaleźć 31 przypadków, co wynika z tego, że używam bardzo konserwatywnej korekty Bonferroniego. Jeśli nie przeszkadzają nam wyniki fałszywie dodatnie, możemy zastosować korektę Benjamini-Hochberga. Korzystając z niej, znajduję prawie wszystkie anomalie (197) i tylko 19 wyników fałszywie dodatnich.
+
+```{r}
+#| include: false
+#| eval: false
+
+wyb20_test <- wyb20_lm %>% 
+  slice(-anomalie2020) %>% 
+  mutate(Anomalia = FALSE)
+
+set.seed(42)
+wyb20_anomalie <- wyb20_test %>% 
+  filter(Trzaskowski_2 > 55, Trzaskowski_2 < 60) %>% 
+  slice_sample(n = 200) %>% 
+  mutate(
+    pom = Trzaskowski_2,
+    Trzaskowski_2 = Duda_2,
+    Duda_2 = pom,
+    Anomalia = TRUE
+  ) %>% 
+  select(-pom)
+
+wyb20_test <- wyb20_test %>% 
+  anti_join(wyb20_anomalie, by = c("Kod", "Komisja")) %>% 
+  bind_rows(wyb20_anomalie)
+
+m_lm <- lm(Trzaskowski_2 ~ Biedroń_1 + Bosak_1 + Hołownia_1 + Jakubiak_1 +
+  Kamysz_1 + Piotrowski_1 + Tanajno_1 + Trzaskowski_1 + Witkowski_1 +
+  Żółtek_1 + Nupr_roznica + Frekwencja_roznica, data = wyb20_test)
+summary(m_lm) # R2 = 0.94
+mean(abs(wyb20_test$Trzaskowski_2 - predict(m_lm))) # 2.31
+
+out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 2000)
+out_df <- tibble(
+  obs = names(out_test$rstudent),
+  rstudent = out_test$rstudent,
+  p = out_test$p,
+  bonf.p = out_test$bonf.p
+) %>% 
+  filter(p < 0.05)
+anomalie_ind <- out_df %>% 
+  filter(bonf.p < 0.05) %>% 
+  pull(obs) %>% 
+  as.numeric()
+wyb20_test %>% 
+  slice(anomalie_ind) %>% 
+  count(Anomalia)
+
+# Bez korekty
+anomalie_ind <- out_df %>% 
+  filter(p < 0.05) %>% 
+  pull(obs) %>% 
+  as.numeric()
+wyb20_test %>% 
+  slice(anomalie_ind) %>% 
+  count(Anomalia)
+
+wyb20_test %>% 
+  mutate(Trzaskowski_pred = predict(m_lm)) %>%
+  mutate(Reszta = Trzaskowski_2 - Trzaskowski_pred) %>% 
+  ggplot(aes(abs(Reszta), fill = Reszta > 0)) +
+  geom_density(alpha = 0.6)
+
+# Korekta B-H
+wyb20_test <- wyb20_test %>% 
+  mutate(Trzaskowski_2_pred = predict(m_lm)) %>% 
+  mutate(reszta = Trzaskowski_2 - Trzaskowski_2_pred) %>% 
+  mutate(reszta = (reszta - mean(reszta)) / sd(reszta)) %>% 
+  mutate(p = 2 * pnorm(-abs(reszta))) %>% # p-wartość, przybliżenie N(0,1)
+  mutate(p_BH = p.adjust(p, method = "BH")) %>% 
+  mutate(p_Bonf = p.adjust(p, method = "bonferroni"))
+
+wyb20_test %>% 
+  filter(p_Bonf < 0.05) %>% 
+  count(Anomalia)
+wyb20_test %>% 
+  filter(p_BH < 0.05) %>% 
+  count(Anomalia)
 ```
 
 ## Zbiór treningowy i testowy
