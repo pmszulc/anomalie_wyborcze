@@ -47,11 +47,11 @@ Porównanie z wynikami pierwszej tury odbywa się na podstawie modelu regresji l
 
 7. Model bazuje na wynikach kandydatów, których nie ma w drugiej turze, więc w pewnym sensie szacuje przepływy głosów. Zakłada on jednak, że są one takie same w całej Polsce (np. w każdej gminie), co prawie na pewno nie jest prawdą. To powoduje, że część anomalii wykrytych przez taki model może dać się wyjaśnić przez inny przepływ głosów akurat w tym miejscu. Zbudowałem dodatkowy model, w którym dla każdego województwa przepływy mogły być inne (interakcja wszystkich zmiennych z województwem), ale wpływ na wyniki był minimalny. Schodzenie niżej, na poziom powiatów lub gmin, jest już problematyczne, bo bardzo mocno rośnie liczba parametrów, więc model może nadmiernie dopasować się do danych. Natomiast takie lokalne różnice można uwzględnić w błędzie losowym (autokorelacja przestrzenna) i wydaje się, że taki model byłby w tym problemie lepszy. Z drugiej strony, jeśli mielibyśmy do czynienia z lokalnymi fałszerstwami (dokonano ich w wielu komisjach, które są blisko), wtedy lepsze jest zaprezentowane tutaj podejście.
 
-8. Anomalie są wskazywane na podstawie reszt z modelu (studentyzowanych). Reszta dodatnia oznacza, że oficjalny wynik Trzaskowskiego jest większy niż prognozowany, a takim razie -- jeśli jest to wynik pomyłki lub oszustwa -- jest ona na jego korzyść. Jeśli reszta jest ujemna, potencjalna pomyłka lub oszustwo były na korzyść Nawrockiego. Ponieważ wiemy, jak takie reszty powinny się rozkładać (rozkład t-Studenta; przy założeniu poprawnej specyfikacji modelu), możemy dla każdej z nich policzyć p-wartość. W uproszczeniu, przy jej pomocy możemy określić komisje, którym wynik drugiej tury jest ekstremalnie mało prawdopodobny, porównując z wynikami pierwszej. Następnie jest stosowana korekta Bonferroniego i za anomalię traktuję tę obserwację (komisję), dla której p-wartość jest mniejsza od 0,05. Jeśli uważamy, że możemy sobie pozwolić na więcej fałszywych odkryć, zamiast korekty Bonferroniego można zastosować np. korektę Benjamini-Hochberga, która kontroluje FDR, a nie FWER. Podaję wyniki dla obu podejść.
+8. Anomalie są wskazywane na podstawie reszt z modelu (studentyzowanych). Reszta dodatnia oznacza, że oficjalny wynik Trzaskowskiego jest większy niż prognozowany, a takim razie -- jeśli jest to wynik pomyłki lub oszustwa -- jest ona na jego korzyść. Jeśli reszta jest ujemna, potencjalna pomyłka lub oszustwo były na korzyść Nawrockiego. Ponieważ wiemy, jak takie reszty powinny się rozkładać (rozkład t-Studenta; przy założeniu poprawnej specyfikacji modelu), możemy dla każdej z nich policzyć p-wartość. W uproszczeniu, przy jej pomocy możemy określić komisje, którym wynik drugiej tury jest ekstremalnie mało prawdopodobny, porównując z wynikami pierwszej. Następnie jest stosowana korekta Benjamini-Hochberga i za anomalię traktuję tę obserwację (komisję), dla której p-wartość jest mniejsza od 0,05.
 
 9. Model nie wychwytuje wszystkich anomalii, ale tylko takie przypadki, w których wyniki drugiej tury w wystarczający sposób różnią się od pierwszej. W szczególności nie wykrywa sytuacji, w której oszustwa dokonano w obu turach (wystarczająco konsekwentnie). Oprócz tego niektóre anomalie mogą świadczyć o tym, że to w pierwszej turze popełnione błąd, nie w drugiej. W dalszej części artykułu analizuję, jak dużo nieprawidłowości jesteśmy w stanie wykryć przy pomocy takiego podejścia.
 
-10. Reszty z modelu mają rozkład symetryczny. Po usunięciu anomalii (tych, co do których możemy mieć dużą pewność, czyli 42 obserwacji), ich rozkład nie jest normalny, kurtoza jest większa (1,5). Może to wynikać z tego, że w pozostałych obserwacjach o dużych resztach wciąż kryje się wiele takich, które mogą być rezultatem pomyłki lub oszustwa --- natomiast pewność co do tego jest mniejsza. Powody mogą być też inne, łącznie z takim, że liniowe przybliżenie zależności z wynikami pierwszej tury jest niewystarczające. W bardziej liberalnym podejściu, po usunięciu 497 komisji (korekta Benjamini-Hochberga), kurtoza już jest bliska zeru (0,12).
+10. Reszty z modelu mają rozkład symetryczny. Po usunięciu anomalii (tych, co do których możemy mieć dużą pewność, czyli 97 obserwacji), ich rozkład nie jest normalny, kurtoza jest większa (0,97). Może to wynikać z tego, że w pozostałych obserwacjach o dużych resztach wciąż kryje się wiele takich, które mogą być rezultatem pomyłki lub oszustwa --- natomiast pewność co do tego jest mniejsza. Powody mogą być też inne, łącznie z takim, że liniowe przybliżenie zależności z wynikami pierwszej tury jest niewystarczające.
 
 11. Na podstawie modelu można wskazać ograniczoną liczbę anomalii, bo ostatecznie wszystkie reszty muszą się zerować, co między innymi wskazywałoby na pełną symetrię (podobna liczba anomalii na rzecz obu kandydatów). Natomiast nie ma żadnego powodu, żeby ta symetria wystąpiła, gdy analizujemy największe reszty. Ten temat zostanie omówiony niżej ("Co jesteśmy w stanie wykryć przy pomocy takiego modelu?").
 
@@ -109,7 +109,8 @@ mean(abs(wyb25_lm$Trzaskowski_2 - predict(m_lm))) # MAE 1.50
 # summary(m_lm)
 
 # Dane odstające
-out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 2000)
+out_test <- outlierTest(m_lm, cutoff = Inf, n.max = Inf)
+# (n.max = Inf, żeby korekta BH była ok)
 out_df <- tibble(
   obs = names(out_test$rstudent),
   rstudent = out_test$rstudent,
@@ -119,7 +120,7 @@ out_df <- tibble(
   mutate(bh.p = p.adjust(p, method = "BH")) %>% 
   filter(bh.p < 0.05)
 out_df %>% filter(bonf.p < 0.05) # 42 obs.
-out_df # 497 obs.
+out_df # 97 obs.
 
 anomalie <- wyb25_lm %>%
   mutate(obs = as.character(row_number())) %>% 
@@ -138,7 +139,7 @@ anomalie <- wyb25_lm %>%
 
 # Pominięcie anomalii (tylko ekstremalne przypadki, korekta Bonf)
 ind <- out_df %>% 
-  filter(bonf.p < 0.05) %>% 
+  filter(bh.p < 0.05) %>% 
   pull(obs) %>% 
   as.numeric()
 m_lm_bez_anom <- wyb25_lm %>% 
@@ -149,34 +150,40 @@ m_lm_bez_anom <- wyb25_lm %>%
 summary(m_lm_bez_anom)
 # plot(m_lm_bez_anom)
 hist(resid(m_lm_bez_anom))
-e1071::kurtosis(resid(m_lm_bez_anom))
-
-# Pominięcie anomalii (korekta B-H)
-ind <- out_df %>% 
-  pull(obs) %>% 
-  as.numeric()
-m_lm_bez_anom <- wyb25_lm %>% 
-  slice(-ind) %>% 
-  lm(Trzaskowski_2 ~ Bartoszewicz_1 + Biejat_1 + Braun_1 + Hołownia_1 + 
-    Jakubiak_1 + Maciak_1 + Mentzen_1 + Senyszyn_1 + Stanowski_1 + Trzaskowski_1 +
-    Woch_1 + Zandberg_1 + Nupr_roznica + Frekwencja_roznica, data = .)
-summary(m_lm_bez_anom)
-# plot(m_lm_bez_anom)
-hist(resid(m_lm_bez_anom))
-e1071::kurtosis(resid(m_lm_bez_anom)) # kurtoza ok
+e1071::kurtosis(resid(m_lm_bez_anom)) # 0.97
 ```
 
 ```{r}
 #| include: false
 #| eval: false
 
-# Interakcje z województwem
+## Interakcje z województwem
 wyb25_lm <- wyb25_lm %>% 
   mutate(Województwo = ifelse(is.na(Województwo), "Zagranica", Województwo))
 m_lm_inter <- lm(Trzaskowski_2 ~ (Bartoszewicz_1 + Biejat_1 + Braun_1 + Hołownia_1 + 
     Jakubiak_1 + Maciak_1 + Mentzen_1 + Senyszyn_1 + Stanowski_1 +  Trzaskowski_1 +
     Woch_1 + Zandberg_1 + Nupr_roznica + Frekwencja_roznica)*Województwo, data = wyb25_lm)
 summary(m_lm_inter)
+
+## GAM
+library("mgcv")
+library("ggeffects")
+m_gam <- bam(Trzaskowski_2 ~ s(Bartoszewicz_1) + s(Biejat_1) + s(Braun_1) +
+    s(Hołownia_1) + s(Jakubiak_1) + s(Maciak_1) + s(Mentzen_1) + s(Senyszyn_1) +
+    s(Stanowski_1) + s(Trzaskowski_1) + s(Woch_1) + s(Zandberg_1) + s(Nupr_roznica) +
+    s(Frekwencja_roznica), data = wyb25_lm, discrete = TRUE)
+f <- wyb25_lm %>% 
+  select(Bartoszewicz_1:Zandberg_1, Nupr_roznica, Frekwencja_roznica) %>% 
+  select(-Nawrocki_1) %>% 
+  names() %>% 
+  paste0(collapse = ", by = Typ_obszaru) + s(") %>% 
+  paste0("Trzaskowski_2 ~ s(", ., ", by = Typ_obszaru)") %>% 
+  as.formula()
+m_gam <- bam(f, data = wyb25_lm %>% 
+  mutate(Typ_obszaru = fct_collapse(Typ_obszaru, "inny" = 
+    c("dzielnica w m.st. Warszawa", "miasto i wieś", "zagranica"))))  
+summary(m_gam)
+mean(abs(wyb25_lm$Trzaskowski_2 - predict(m_gam))) # MAE 1.45
 ```
 
 ## Współczynniki modelu
@@ -194,11 +201,11 @@ Współczynniki przy poszczególnych kandydatach korelują z przepływami (ile p
 
 ## Wyniki
 
-Poniżej komisje, dla których p-wartość (z korektą Bonferroniego) jest mniejsza od 0,05. *Reszta_s* to reszta studentyzowana, przy pomocy której szukam danych odstających, *Różnica_pp* to różnica między oficjalnym wynikiem Trzaskowskiego a prognozowanym.
+Poniżej 30 komisji z najniższą p-wartością. *Reszta_s* to reszta studentyzowana, przy pomocy której szukam danych odstających, *Różnica_pp* to różnica między oficjalnym wynikiem Trzaskowskiego a prognozowanym.
 
 ```{r}
 anomalie %>% 
-  filter(bonf.p < 0.05) %>% 
+  slice(1:30) %>% 
   select(Gmina, Komisja, Reszta_s = rstudent, p = bonf.p, Różnica_pp) %>%
   #mutate(p = signif(p, digits = 3)) %>%
   mutate(p = formatC(p, format = "e", digits = 2)) %>% 
@@ -207,20 +214,13 @@ anomalie %>%
   kable(digits = c(NA, 0, 2, NA, 2), align = c("l", rep("r", 4)))
 ```
 
-Pokazuję wszystkie wytypowane komisje, bo to w pewnym stopniu umożliwia ocenę jakości całego podejścia, natomiast każdej z nich należałoby się przyjrzeć i być może część wykluczyć po głębszej analizie. Jak widać, ostatnie anomalie to różnice jedynie na poziomie 10 p.p., tak że już tutaj można mieć wątpliwości, czy nie są to wyniki fałszywie dodanie (tzn. podana oficjalnie liczba głosów jest poprawna, mimo że według modelu powinna być inna).
-
-W sumie 19 anomalii jest na korzyść Trzaskowskiego, 23 na korzyść Nawrockiego. Porównując wartości oficjalne z prognozowanymi (czyli zakładając, że w każdym przypadku doszło do nieprawidłowość i model wskazuje poprawny wynik), Trzaskowski stracił 1750 głosów.
-
-Jeśli rozważyć znacznie bardziej skrajny scenariusz (liberalna korekta B-H), model wskazuje na 497 podejrzanych komisji: 235 na korzyść Trzaskowskiego i 262 Nawrockiego. Trzaskowski stracił w sumie 1494 głosy (czyli w kolejnych "anomaliach" jest bardzo duża symetria, a nawet Nawrocki lekko traci). Natomiast w takim scenariuszu należy oczekiwać, że wiele wskazań to wyniki fałszywie dodatnie.
+W sumie 50 anomalii jest na korzyść Trzaskowskiego, 47 na korzyść Nawrockiego. Porównując wartości oficjalne z prognozowanymi (czyli zakładając, że w każdym przypadku doszło do nieprawidłowość i model wskazuje poprawny wynik), Trzaskowski stracił 1051 głosów.
 
 ```{r}
 #| include: false
 
 anomalie %>% 
-  filter(bonf.p < 0.05) %>% 
   count(Korzytne) 
-anomalie %>% 
-  count(Korzytne)
 anomalie %>% 
   ggplot(aes(abs(rstudent), fill = Korzytne)) +
   geom_density(alpha = 0.6) +
@@ -228,24 +228,16 @@ anomalie %>%
 
 # Porównanie sumy wyników prognozowanych i podanych
 anomalie %>%
-  filter(bonf.p < 0.05) %>% 
   summarise(across(c(Trzaskowski_N, Trzaskowski_pred_N, 
     Nawrocki_N, Nawrocki_pred_N), sum)) %>% 
   mutate(Trzask = Trzaskowski_N - Trzaskowski_pred_N, 
     Nawr = Nawrocki_N - Nawrocki_pred_N)
-# Trzaskowski stracił 1048 głosów, Nawrocki tyle zyskał
-
-anomalie %>%
-  summarise(across(c(Trzaskowski_N, Trzaskowski_pred_N, 
-    Nawrocki_N, Nawrocki_pred_N), sum)) %>% 
-  mutate(Trzask = Trzaskowski_N - Trzaskowski_pred_N, 
-    Nawr = Nawrocki_N - Nawrocki_pred_N)
-# Trzaskowski stracił 1259 głosów, Nawrocki tyle zyskał
+# Trzaskowski stracił 1051 głosów, Nawrocki tyle zyskał
 ```
 
-Sprawdziłem to podejście dla innych wyborów prezydenckich: w 2020 roku (zmienna zależna to też wynik Trzaskowskiego) i 2015 (Komorowski). Model dla 2020 jest bardzo podobny: R^2 wynosi 98,8%, średni błąd bezwzględny 1,36 p.p. Zwraca 43 anomalie: 20 na korzyść Trzaskowskiego, 23 na korzyść Dudy (Duda stracił przez to 76 głosów).
+Zastosowałem to podejście do innych wyborów prezydenckich: w 2020 roku (zmienna zależna to też wynik Trzaskowskiego) i 2015 (Komorowski). Model dla 2020 jest bardzo podobny: R^2 wynosi 98,8%, średni błąd bezwzględny 1,36 p.p. Zwraca 109 anomalii: 49 na korzyść Trzaskowskiego, 60 na korzyść Dudy (Trzaskowski stracił przez to 291 głosów).
 
-Model dla 2015 roku jest słabszy, R^2 wynosi 96,4%, błąd bezwzględny 2,21 p.p. Zwraca 14 anomalii: 3 na korzyść Komorowskiego, 11 Dudy (Komorowski stracił przez to 1082 głosy).
+Model dla 2015 roku jest słabszy, R^2 wynosi 96,4%, błąd bezwzględny 2,21 p.p. Zwraca 50 anomalii: 18 na korzyść Komorowskiego, 32 Dudy (Komorowski stracił przez to 868 głosów).
 
 ```{r}
 #| include: false
@@ -281,7 +273,7 @@ summary(m_lm)
 vif(m_lm)
 mean(abs(wyb20_lm$Trzaskowski_2 - predict(m_lm))) # MAE 1.36
 
-out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 2000)
+out_test <- outlierTest(m_lm, cutoff = Inf, n.max = Inf)
 out_df <- tibble(
   obs = names(out_test$rstudent),
   rstudent = out_test$rstudent,
@@ -291,7 +283,7 @@ out_df <- tibble(
   mutate(bh.p = p.adjust(p, method = "BH")) %>% 
   filter(bh.p < 0.05)
 out_df %>% filter(bonf.p < 0.05) # 43
-out_df # 487
+out_df # 109
 
 anomalie <- wyb20_lm %>%
   mutate(obs = as.character(row_number())) %>% 
@@ -309,22 +301,12 @@ anomalie <- wyb20_lm %>%
   mutate(Różnica_pp = Trzaskowski_proc - Trzaskowski_pred)
 
 anomalie %>% 
-  filter(bonf.p < 0.05) %>% 
-  count(Korzytne) 
-anomalie %>% 
   count(Korzytne)
-
 anomalie %>%
-  filter(bonf.p < 0.05) %>% 
   summarise(across(c(Trzaskowski_N, Trzaskowski_pred_N, 
     Duda_N, Duda_pred_N), sum)) %>% 
   mutate(Trzask = Trzaskowski_N - Trzaskowski_pred_N, 
     Duda = Duda_N - Duda_pred_N)
-anomalie %>%
-  summarise(across(c(Trzaskowski_N, Trzaskowski_pred_N, 
-    Duda_N, Duda_pred_N), sum)) %>% 
-  mutate(Trzask = Trzaskowski_N - Trzaskowski_pred_N, 
-    Nawr = Duda_N - Duda_pred_N)
 ```
 
 ```{r}
@@ -361,7 +343,7 @@ summary(m_lm)
 vif(m_lm)
 mean(abs(wyb15_lm$Komorowski_2 - predict(m_lm))) # MAE 2.21
 
-out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 2000)
+out_test <- outlierTest(m_lm, cutoff = Inf, n.max = Inf)
 out_df <- tibble(
   obs = names(out_test$rstudent),
   rstudent = out_test$rstudent,
@@ -371,7 +353,7 @@ out_df <- tibble(
   mutate(bh.p = p.adjust(p, method = "BH")) %>%
   filter(bh.p < 0.05)
 out_df %>% filter(bonf.p < 0.05) # 14
-out_df # 389
+out_df # 50
 
 anomalie <- wyb15_lm %>%
   mutate(obs = as.character(row_number())) %>% 
@@ -389,17 +371,8 @@ anomalie <- wyb15_lm %>%
   mutate(Różnica_pp = Komorowski_proc - Komorowski_pred)
 
 anomalie %>% 
-  filter(bonf.p < 0.05) %>% 
-  count(Korzytne) 
-anomalie %>% 
   count(Korzytne)
 
-anomalie %>%
-  filter(bonf.p < 0.05) %>% 
-  summarise(across(c(Komorowski_N, Komorowski_pred_N, 
-    Duda_N, Duda_pred_N), sum)) %>% 
-  mutate(Komor = Komorowski_N - Komorowski_pred_N, 
-    Duda = Duda_N - Duda_pred_N)
 anomalie %>%
   summarise(across(c(Komorowski_N, Komorowski_pred_N, 
     Duda_N, Duda_pred_N), sum)) %>% 
@@ -411,12 +384,12 @@ anomalie %>%
 
 Ważne pytanie, jakie warto zadać, to jakie są możliwości zaproponowanego podejścia. W szczególności, czy jeśli dokonano fałszerstw głównie na rzecz jednego kandydata (wtedy już raczej można mówić o fałszerstwach, bo pomyłki są zwykle symetryczne), to czy jesteśmy w stanie to wykryć?
 
-Można to sprawdzić, samemu wprowadzając fałszerstwa (np. odwrócenie wyników), a następnie badając, czy da się je odnaleźć. Bazuję na wynikach wyborów z 2020 roku i w pierwszym kroku usuwam z danych podejrzane przypadki (43, korekta Bonferroniego). Otrzymuję model, dla którego współczynnik R^2 wynosi 99,0%, błąd bezwzględny (MAE) 1,34. Zakładam, że w takich danych nie ma już nieprawidłowości, a następnie wprowadzam je sam.
+Można to sprawdzić, samemu wprowadzając fałszerstwa (np. odwrócenie wyników), a następnie badając, czy da się je odnaleźć. Bazuję na wynikach wyborów z 2020 roku i w pierwszym kroku usuwam z danych 109 podejrzanych przypadków. Otrzymuję model, dla którego współczynnik R^2 wynosi 99,0%, błąd bezwzględny (MAE) 1,32. Zakładam, że w takich danych nie ma już nieprawidłowości, a następnie wprowadzam je sam.
 
 ```{r}
 #| include: false
 
-## Usunięcie anomalii z wyborów 2020 (tylko największych, Bonf)
+## Usunięcie anomalii z wyborów 2020
 
 wyb20_lm <- wyb20proc %>% 
   mutate(Nupr_roznica = (Nupr_2 / Nupr_1 - 1) * 100) %>% 
@@ -431,7 +404,7 @@ wyb20_lm <- wyb20proc %>%
 m_lm <- lm(Trzaskowski_2 ~ Biedroń_1 + Bosak_1 + Hołownia_1 + Jakubiak_1 +
   Kamysz_1 + Piotrowski_1 + Tanajno_1 + Trzaskowski_1 + Witkowski_1 +
   Żółtek_1 + Nupr_roznica + Frekwencja_roznica, data = wyb20_lm)
-out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 2000)
+out_test <- outlierTest(m_lm, cutoff = Inf, n.max = Inf)
 out_df <- tibble(
   obs = names(out_test$rstudent),
   rstudent = out_test$rstudent,
@@ -439,10 +412,10 @@ out_df <- tibble(
   bonf.p = out_test$bonf.p
 ) %>% 
   mutate(bh.p = p.adjust(p, method = "BH")) %>% 
-  filter(bonf.p < 0.05)
+  filter(bh.p < 0.05)
 anomalie2020 <- out_df %>%
   pull(obs) %>% 
-  as.numeric() # 43
+  as.numeric()
 wyb_test <- wyb20_lm %>% 
   slice(-anomalie2020) %>% 
   mutate(Anomalia = FALSE) # założenie: brak anomalii w danych
@@ -451,21 +424,21 @@ m_lm <- lm(Trzaskowski_2 ~ Biedroń_1 + Bosak_1 + Hołownia_1 + Jakubiak_1 +
   Kamysz_1 + Piotrowski_1 + Tanajno_1 + Trzaskowski_1 + Witkowski_1 +
   Żółtek_1 + Nupr_roznica + Frekwencja_roznica, data = wyb_test)
 summary(m_lm)
-mean(abs(wyb_test$Trzaskowski_2 - predict(m_lm))) # MAE 1.34
+mean(abs(wyb_test$Trzaskowski_2 - predict(m_lm))) # MAE 1.32
 ```
 
 ### Scenariusz 1
 
-W pierwszym scenariuszu wylosowałem 100 komisji, w których Trzaskowski zdobył od 55 do 60% głosów, i zamieniam jego wynik z Dudą. Wprowadzam zatem asymetryczne fałszerstwo, tylko na korzyść jednego kandydata. Następnie stosuję zaproponowane przeze mnie podejście: dopasowuję model regresji i znajduję anomalie przy pomocy reszt i p-wartości, stosując korekty Bonferroniego i B-H. Przy pomocy tej pierwszej korekty odnajduję 97 fałszerstw (97%) i nie dostaję żadnego wyniku fałszywie dodatniego (co jednak jest naturalne, bo wcześniej usunąłem podejrzane przypadki właśnie przy pomocy tej korekty). Stosując korektę B-H, odnajduję wszystkie fałszerstwa, ale też sporo wyników fałszywie dodatnich (stanowią one 43% wszystkich odkryć). Co ważne, te wyniki fałszywie dodatnie są już symetryczne (55% na korzyść Dudy). Część z nich to rzeczywiście mogą być jakieś nieprawidłowości, bo z danych usunąłem tylko największe anomalie (korekta Bonferroniego).
+W pierwszym scenariuszu wylosowałem 100 komisji, w których Trzaskowski zdobył od 55 do 60% głosów, i zamieniam jego wynik z Dudą. Wprowadzam zatem asymetryczne fałszerstwo, tylko na korzyść jednego kandydata. Następnie stosuję zaproponowane przeze mnie podejście: dopasowuję model regresji i znajduję anomalie przy pomocy reszt i p-wartości, stosując korektę B-H dla dwóch progów: 0,05 i 0,1. W obu przypadkach znajduję wszystkie fałszerstwa i nie dostaję żadnego wyniku fałszywie dodatniego (co jednak jest naturalne, bo wcześniej usunąłem podejrzane przypadki właśnie przy pomocy tej korekty).
 
-Wszystkich komisji, w których Trzaskowski otrzymał od 55 do 60% jest 2579, więc powyższą symulację można powtórzyć dla innych 100 wylosowanych komisji. Wykonuję 50 takich powtórzeń (oczywiście częściowo wylosowane komisje będą się pokrywać), dzięki czemu otrzymane wyniki będą pewniejsze. Przy pomocy korekty Bonferroniego znajduję średnio 94,6% fałszerstw i 0 wyników fałszywie dodatnich. Przy pomocy korekty B-H znajduję średnio 99,5% fałszerstw, 43,2% wyników fałszywie dodatnich (spośród wszystkich odkryć), z czego 53,1% to przypadki na korzyść Dudy.
+Wszystkich komisji, w których Trzaskowski otrzymał od 55 do 60% jest 2579, więc powyższą symulację można powtórzyć dla innych 100 wylosowanych komisji. Wykonuję 50 takich powtórzeń (oczywiście częściowo wylosowane komisje będą się pokrywać), dzięki czemu otrzymane wyniki będą pewniejsze. Dla progu 0,05 znajduję średnio 99,2% fałszerstw i 0 wyników fałszywie dodatnich, a dla progu 0,1 99,4% fałszerstw i 0,04% wyników fałszywie dodatnich (spośród wszystkich odkryć).
 
 ```{r}
-scenariusz1 <- function(seed, N = 100) {
+scenariusz1 <- function(seed, granica = c(55, 60), N = 100) {
   # Wprowadzenie fałszerstw
   set.seed(seed)
   wyb_anomalie <- wyb_test %>% 
-    filter(Trzaskowski_2 > 55, Trzaskowski_2 < 60) %>% 
+    filter(Trzaskowski_2 > granica[1], Trzaskowski_2 < granica[2]) %>% 
     slice_sample(n = N) %>% 
     mutate(pom = Trzaskowski_2, Trzaskowski_2 = Duda_2, Duda_2 = pom,
       Anomalia = TRUE) %>% 
@@ -475,65 +448,56 @@ scenariusz1 <- function(seed, N = 100) {
     bind_rows(wyb_anomalie)
 }
 
-wykryj_anomalie <- function(df) {
+wykryj_anomalie <- function(df, alfa = 0.05, korekta = TRUE, procent = TRUE) {
   m_lm <- lm(Trzaskowski_2 ~ Biedroń_1 + Bosak_1 + Hołownia_1 + Jakubiak_1 +
     Kamysz_1 + Piotrowski_1 + Tanajno_1 + Trzaskowski_1 + Witkowski_1 +
     Żółtek_1 + Nupr_roznica + Frekwencja_roznica, data = df)
   rsq <- summary(m_lm)$r.squared # R2 = 0.985
   mae <- mean(abs(df$Trzaskowski_2 - predict(m_lm)))
   
-  out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 1e4)
+  out_test <- outlierTest(m_lm, cutoff = Inf, n.max = Inf)
   out_df <- tibble(
     obs = names(out_test$rstudent),
     rstudent = out_test$rstudent,
     p = out_test$p,
     bonf.p = out_test$bonf.p
   ) %>% 
-    mutate(bh.p = p.adjust(p, method = "BH")) %>% 
-    filter(bh.p < 0.05)
-  anomalie_bonf <- out_df %>% 
-    filter(bonf.p < 0.05) %>% 
-    pull(obs) %>% 
-    as.numeric()
-  anomalie_bh <- out_df %>% 
-    pull(obs) %>% 
-    as.numeric()
+    mutate(bh.p = p.adjust(p, method = "BH"))
+  
+  if (korekta) {
+    anomalie <- out_df %>% filter(bh.p < alfa)
+  } else {
+    anomalie <- out_df %>% filter(p < alfa)
+  }
+  anomalie <- anomalie %>% pull(obs) %>% as.numeric()
   
   df <- df %>% 
     mutate(ID = row_number()) %>% 
     mutate(Trzaskowski_pred = predict(m_lm)) %>% 
-    mutate(Anomalia_bonf = (ID %in% anomalie_bonf)) %>% 
-    mutate(Anomalia_bh = (ID %in% anomalie_bh))
-  wyn_bonf <- df %>% 
-    count(Anomalia, Anomalia_bonf) %>% 
-    mutate(proc = n / sum(n) * 100, .by = Anomalia) %>% 
-    mutate(proc_fp = n / sum(n) * 100, .by = Anomalia_bonf)
-  Bonf_anom <- wyn_bonf %>% filter(Anomalia, Anomalia_bonf) %>% pull(proc)
-  Bonf_fp <- wyn_bonf %>% filter(!Anomalia, Anomalia_bonf) %>% pull(proc_fp)
-  Bonf_fp <- ifelse(length(Bonf_fp) == 0, 0, Bonf_fp)
+    mutate(Anomalia_pred = (ID %in% anomalie)) 
+  wyn <- df %>% 
+    count(Anomalia, Anomalia_pred)
+  
+  if (procent) {
+    wyn <- wyn %>% 
+      mutate(proc = n / sum(n) * 100, .by = Anomalia) %>% 
+      mutate(proc_fp = n / sum(n) * 100, .by = Anomalia_pred)
+    anom <- wyn %>% filter(Anomalia, Anomalia_pred) %>% pull(proc)
+    fp <- wyn %>% filter(!Anomalia, Anomalia_pred) %>% pull(proc_fp)
+  } else {
+    anom <- wyn %>% filter(Anomalia, Anomalia_pred) %>% pull(n)
+    fp <- wyn %>% filter(!Anomalia, Anomalia_pred) %>% pull(n)
+  }
+  anom <- ifelse(length(anom) == 0, 0, anom)
+  fp <- ifelse(length(fp) == 0, 0, fp)
   # Na czyją korzyść FP?
-  Bonf_Duda <- df %>% 
-    filter(!Anomalia, Anomalia_bonf) %>%  # FP
-    summarise(100 * mean(Trzaskowski_2 < Trzaskowski_pred)) %>% # na korzyść Dudy
-    pull()
-  Bonf_Duda <- ifelse(is.nan(Bonf_Duda), 0, Bonf_Duda)
+  # Duda <- df %>% 
+  #   filter(!Anomalia, Anomalia_pred) %>%  # FP
+  #   summarise(100 * mean(Trzaskowski_2 < Trzaskowski_pred)) %>% # na korzyść Dudy
+  #   pull()
+  # Duda <- ifelse(is.nan(Duda), 0, Duda)
   
-  wyn_bh <- df %>% 
-    count(Anomalia, Anomalia_bh) %>% 
-    filter(Anomalia | Anomalia_bh) %>% 
-    mutate(proc = n / sum(n) * 100, .by = Anomalia) %>% 
-    mutate(proc_fp = n / sum(n) * 100, .by = Anomalia_bh)
-  BH_anom <- wyn_bh %>% filter(Anomalia, Anomalia_bh) %>% pull(proc)
-  BH_fp <- wyn_bh %>% filter(!Anomalia, Anomalia_bh) %>% pull(proc_fp)
-  BH_fp <- ifelse(length(BH_fp) == 0, 0, BH_fp)
-  BH_Duda <- df %>% 
-    filter(!Anomalia, Anomalia_bh) %>%
-    summarise(100 * mean(Trzaskowski_2 < Trzaskowski_pred)) %>%
-    pull()
-  BH_Duda <- ifelse(is.nan(BH_Duda), 0, BH_Duda)
-  
-  tibble(R2 = rsq, MAE = mae, Bonf_anom, Bonf_fp, Bonf_Duda,
-    BH_anom, BH_fp, BH_Duda)
+  tibble(Alfa = alfa, R2 = rsq, MAE = mae, Anomalie = anom, FP = fp)
 }
 ```
 
@@ -542,59 +506,59 @@ wykryj_anomalie <- function(df) {
 #| eval: false
 
 wyb_anom <- scenariusz1(1)
-wykryj_anomalie(wyb_anom)
+wykryj_anomalie(wyb_anom, 0.05)
+wykryj_anomalie(wyb_anom, 0.1)
 
 wyb_anom <- map(1:50, scenariusz1)
-scen1_wyniki <- map_dfr(wyb_anom, wykryj_anomalie, .progress = TRUE)
-scen1_wyniki %>% 
-  summarise(across(everything(), mean))
+wyniki <- map2_dfr(rep(wyb_anom, 2), rep(c(0.05, 0.1), each = 50), wykryj_anomalie,
+  .progress = TRUE)
+wyniki %>% summarise(across(everything(), mean), .by = Alfa)
 ```
 
-Rozważmy teraz bardziej ekstremalną sytuację, w której w 1000 takich komisji dokonano fałszerstw na korzyść Dudy. Przy pomocy korekty Bonferroniego wykrywamy ich 24,8%, bez wyników fałszywie dodatnich (FP). Przy pomocy korekty B-H wykrywamy 88,2%, również bez FP. Ten brak FP świadczy to o tym, że korekta B-H jest w tym przypadku konserwatywna.
+Rozważmy teraz bardziej ekstremalną sytuację, w której w 1000 takich komisji dokonano fałszerstw na korzyść Dudy. Przy pomocy progu 0,05 wykrywamy ich 79,8%, bez wyników fałszywie dodatnich (FP), a dla 0,1 wykrywamy 87,0%, również bez FP. Ten brak FP świadczy to o tym, że korekta B-H jest w tym przypadku konserwatywna.
 
 ```{r}
 #| include: false
 #| eval: false
 
 wyb_anom <- map(1:50, scenariusz1, N = 1000)
-scen2_wyniki <- map_dfr(wyb_anom, wykryj_anomalie, .progress = TRUE)
-scen2_wyniki %>% 
-  summarise(across(everything(), mean))
+wyniki <- map2_dfr(rep(wyb_anom, 2), rep(c(0.05, 0.1), each = 50), wykryj_anomalie,
+  .progress = TRUE)
+wyniki %>% summarise(across(everything(), mean), .by = Alfa)
 ```
 
 ### Scenariusz 2
 
-Rozpatrzmy teraz znacznie trudniejszą sytuację, w której do zamiany wyników doszło w przypadku, gdy Trzaskowski otrzymał od 53 do 55% (jest 1069 takich komisji). Mimo że fałszerstwa są niewielkie, przy pomocy korekty Bonferroniego wykrywamy średnio 30,9% z nich (2,37% wyników FP), a przy pomocy B-H aż 82,9% (62,4% FP). Warto dodać, że tego typu fałszerstwa mają mniejszy wpływ na ogólny wyników wyborów, więc niewykrycie ich ma mniejsze konsekwencje.
+Rozpatrzmy teraz znacznie trudniejszą sytuację, w której do zamiany wyników doszło w przypadku, gdy Trzaskowski otrzymał od 53 do 55% (jest 1069 takich komisji). Mimo że fałszerstwa są niewielkie, dla progu 0,05 wykrywamy średnio 69,8% z nich (2,98% wyników FP), a dla progu 0,1 79,9% (38,5% FP). Warto dodać, że tego typu fałszerstwa mają mniejszy wpływ na ogólny wyników wyborów, więc niewykrycie ich ma mniejsze konsekwencje.
 
 ```{r}
 #| include: false
+#| eval: false
 
-scenariusz2 <- function(seed, N = 5000) {
-  set.seed(seed)
-  wyb_anomalie <- wyb_test %>% 
-    filter(Trzaskowski_2 > 50) %>% 
-    slice_sample(n = N) %>% 
-    mutate(pom = Trzaskowski_2, Trzaskowski_2 = Duda_2, Duda_2 = pom,
-      Anomalia = TRUE) %>% 
-    select(-pom)
-  wyb_test %>% 
-    anti_join(wyb_anomalie, by = c("Kod", "Komisja")) %>% 
-    bind_rows(wyb_anomalie)
-}
+wyb_anom <- map(1:50, scenariusz1, N = 100, granica = c(53, 55))
+wyniki <- map2_dfr(rep(wyb_anom, 2), rep(c(0.05, 0.1), each = 50), wykryj_anomalie,
+  .progress = TRUE)
+wyniki %>% summarise(across(everything(), mean), .by = Alfa)
+```
 
-wyb_anom <- map(1:50, scenariusz2, N = 5000)
-scen4_wyniki <- map_dfr(wyb_anom, wykryj_anomalie, .progress = TRUE)
-scen4_wyniki %>% 
-  summarise(across(everything(), mean))
+Rozszerzmy ten scenariusz na ekstremalną sytuację, w której tego typu fałszerstw dokonano w 5000 komisjach, w których Trzaskowski otrzymał co najmniej 50% głosów. W takim wypadku nie ma szans, żeby odnaleźć anomalie, bo nie mamy do czynienia z *anomaliami*, ale systematycznym oszustwem. Natomiast jesteśmy w stanie wykryć taką sytuację, analizując ogólne statystyki modelu: R^2 wynosi jedynie 61,8%, MAE 6,55. Oprócz tego problem jest bardzo dobrze widoczny w rozkładzie reszt. Poniżej wykres gęstości dla reszt ujemnych i dodatnich: silnie asymetryczny, z długim ogonem dla reszt ujemnych (fałszerstwa na korzyść Dudy).
 
+```{r}
+#| include: false
+#| eval: false
+
+wyb_anom <- map(1:50, scenariusz1, N = 5000, granica = c(50, 100))
+wyniki <- map2_dfr(rep(wyb_anom, 2), rep(c(0.05, 0.1), each = 50), wykryj_anomalie,
+  .progress = TRUE)
+wyniki %>% summarise(across(everything(), mean), .by = Alfa)
+```
+
+```{r}
+wyb_anom <- map(1, scenariusz1, N = 5000, granica = c(50, 100))
 m_lm <- lm(Trzaskowski_2 ~ Biedroń_1 + Bosak_1 + Hołownia_1 + Jakubiak_1 +
   Kamysz_1 + Piotrowski_1 + Tanajno_1 + Trzaskowski_1 + Witkowski_1 +
   Żółtek_1 + Nupr_roznica + Frekwencja_roznica, data = wyb_anom[[1]])
-```
 
-Rozszerzmy ten scenariusz na ekstremalną sytuację, w której tego typu fałszerstw dokonano w 5000 komisjach, w których Trzaskowski otrzymał co najmniej 50% głosów. W takim wypadku nie ma szans, żeby wykryć anomalie, bo nie mamy do czynienia z *anomaliami*, ale systematycznym oszustwem. Natomiast jesteśmy w stanie wykryć taką sytuację, analizując ogólne statystyki modelu: R^22 wynosi jedynie 61,8%, MAE 6,56. Oprócz tego problem jest bardzo dobrze widoczny w rozkładzie reszt. Poniżej wykres gęstości dla reszt ujemnych i dodatnich: silnie asymetryczny, z długim ogonem dla reszt ujemnych (fałszerstwa na korzyść Dudy).
-
-```{r}
 wyb_anom[[1]] %>%
   mutate(Trzaskowski_pred = predict(m_lm)) %>%
   mutate(Reszta = Trzaskowski_2 - Trzaskowski_pred) %>%
@@ -608,7 +572,7 @@ wyb_anom[[1]] %>%
 
 ### Scenariusz 3
 
-Tym razem wprowadzam inny rodzaj fałszerstwa: jednemu z kandydatów (Trzaskowskiemu) w 100 komisjach zabieram tylko część głosów (np. 5 p.p.) i przekazuję drugiemu (Dudzie). Oczywiście im większy będzie odsetek fałszywie przypisanych głosów, tym łatwiej powinniśmy go wykryć. Zmieniam ten parametr od 1 do 15 p.p. i na poniższych wykresach prezentuję procent odnalezionych fałszerstw oraz jaką część wszystkich odkryć stanowią wyniki fałszywie dodatnie. Są to średnie wartości z 50 symulacji dla każdego przypadku (wraz z błędami standardowymi)
+Tym razem wprowadzam inny rodzaj fałszerstwa: jednemu z kandydatów (Trzaskowskiemu) w 100 komisjach zabieram tylko część głosów (np. 5 p.p.) i przekazuję drugiemu (Dudzie). Oczywiście im większy będzie odsetek fałszywie przypisanych głosów, tym łatwiej powinniśmy go wykryć. Zmieniam ten parametr od 1 do 15 p.p. i na poniższych wykresach prezentuję procent odnalezionych fałszerstw oraz jaką część wszystkich odkryć stanowią wyniki fałszywie dodatnie. Są to średnie wartości z 50 symulacji dla każdego przypadku (wraz z błędami standardowymi).
 
 ```{r}
 #| fig-height: 8
@@ -626,25 +590,25 @@ scenariusz3 <- function(seed, d = 10, N = 100) {
 }
 pods_d <- function(d, N = 100) {
   wyb_anom <- map(1:50, scenariusz3, d = d, N = N)
-  wyniki <- map_dfr(wyb_anom, wykryj_anomalie)
+  wyniki <- map2_dfr(rep(wyb_anom, 2), rep(c(0.05, 0.1), each = 50), wykryj_anomalie, procent = TRUE)
   wyniki %>% 
-    summarise(across(everything(), list(M = mean, SE = sd))) %>% 
+    summarise(across(everything(), list(M = mean, SE = sd)), .by = Alfa) %>% 
     mutate(D = d, .before = 1)
 }
-scen5_wyniki <- map_dfr(1:15, pods_d, N = 100, .progress = TRUE)
+wyb_anom <- map_dfr(1:15, pods_d, N = 100, .progress = TRUE)
 
-scen5_wyniki %>%
-  select(D, Bonf_anom_M:Bonf_fp_SE, BH_anom_M:BH_fp_SE) %>% 
-  pivot_longer(-D, names_to = c("Korekta", "Typ", "Statystyka"), names_sep = "_") %>% 
+wyb_anom %>%
+  select(D, Alfa, Anomalie_M:FP_SE) %>% 
+  pivot_longer(-c(D, Alfa), names_to = c("Typ", "Statystyka"), names_sep = "_") %>% 
   pivot_wider(names_from = "Statystyka", values_from = "value") %>% 
-  mutate(Korekta = fct_recode(Korekta, "Benjamini-Hochberg" = "BH",
-    "Bonferroni" = "Bonf")) %>% 
-  mutate(Typ = fct_recode(Typ, "Procent wykrytych fałszerstw" = "anom",
-    "Procent wyników fałszywie dodatnich" = "fp")) %>% 
-  ggplot(aes(D, M, col = Korekta)) +
+  mutate(Typ = fct_recode(Typ, "Procent wykrytych fałszerstw" = "Anomalie",
+    "Procent wyników fałszywie dodatnich" = "FP")) %>% 
+  mutate(Alfa = as.factor(Alfa)) %>% 
+  mutate(SEmin = pmax(M - SE, 0)) %>% 
+  ggplot(aes(D, M, col = Alfa)) +
   geom_point(size = 2.5) +
   geom_line(linewidth = 1.3, alpha = 0.5) +
-  geom_errorbar(aes(ymin = M - SE, ymax = M + SE), width = 0.4, linewidth = 1) +
+  geom_errorbar(aes(ymin = SEmin, ymax = M + SE), width = 0.4, linewidth = 1) +
   facet_wrap(vars(Typ), scale = "free_y", ncol = 1) +
   scale_y_continuous(limits = c(0, NA), labels = scales::percent_format(scale = 1)) +
   scale_x_continuous(breaks = seq(1, 15, by = 2)) +
@@ -654,56 +618,31 @@ scen5_wyniki %>%
     axis.ticks = element_blank(),
     panel.grid.major = element_line(color = "gray90", linewidth = 0.5)
   ) +
-  labs(x = "Część zamienionych głosów [p.p.]", y = "", caption = "N = 100")
+  labs(x = "Część zamienionych głosów [p.p.]", y = "", caption = "N = 100",
+    col = "alfa")
 ```
 
-Jak należało się spodziewać, zamiana 1% głosów jest nie do wykrycia. Korekta B-H jest bardziej czuła i znajduje połowę fałszerstw już przy różnicy 6 p.p., ale zwraca też dużo wyników fałszywie dodatnich.
+Jak należało się spodziewać, zamiana paru procent głosów jest nie do wykrycia. Dopiero przy różnicy 6 p.p. i progu 0,1 odnajdujemy ok. 40% fałszerstw, choć połowa wszystkich wskazań to fałszywe odkrycia.
 
-Gdy zwiększymy liczbę takich fałszerstw do 1000, widać, że korekta Bonferroniego jest zbyt konserwatywna:
+Na koniec przeanalizujemy jeszcze przypadek, gdy zamiana części głosów tyczy się jedynie 3 punktów procentowych. Nie jesteśmy w stanie wykryć takich komisji, z drugiej strony, patrząc w liczbach bezwzględnych, stanowi to co najwyżej kilkadziesiąt głosów na komisję. Można założyć, że aby takie fałszerstwo mogło mieć wpływ na końcowy wyniki, powinno zostać przeprowadzone w tysiącach komisji (oczywiście poza przypadkiem, gdy różnica między kandydatami jest bardzo mała). 
 
-```{r}
-#| fig-height: 8
-
-scen5_wyniki <- map_dfr(1:15, pods_d, N = 1000, .progress = TRUE)
-scen5_wyniki %>%
-  select(D, Bonf_anom_M:Bonf_fp_SE, BH_anom_M:BH_fp_SE) %>% 
-  pivot_longer(-D, names_to = c("Korekta", "Typ", "Statystyka"), names_sep = "_") %>% 
-  pivot_wider(names_from = "Statystyka", values_from = "value") %>% 
-  mutate(Korekta = fct_recode(Korekta, "Benjamini-Hochberg" = "BH",
-    "Bonferroni" = "Bonf")) %>% 
-  mutate(Typ = fct_recode(Typ, "Procent wykrytych fałszerstw" = "anom",
-    "Procent wyników fałszywie dodatnich" = "fp")) %>% 
-  ggplot(aes(D, M, col = Korekta)) +
-  geom_point(size = 2.5) +
-  geom_line(linewidth = 1.3, alpha = 0.5) +
-  geom_errorbar(aes(ymin = M - SE, ymax = M + SE), width = 0.4, linewidth = 1) +
-  facet_wrap(vars(Typ), scale = "free_y", ncol = 1) +
-  scale_y_continuous(limits = c(0, NA), labels = scales::percent_format(scale = 1)) +
-  scale_x_continuous(breaks = seq(1, 15, by = 2)) +
-  scale_color_manual(values = c("#0072B2", "#56B4E9")) +
-  theme(
-    axis.line = element_blank(),
-    axis.ticks = element_blank(),
-    panel.grid.major = element_line(color = "gray90", linewidth = 0.5)
-  ) +
-  labs(x = "Część zamienionych głosów [p.p.]", y = "", caption = "N = 1000")
-```
-
-Na koniec przeanalizujemy jeszcze przypadek, gdy zamiana części głosów tyczy się jedynie 3 punktów procentowych. Nie jesteśmy w stanie wykryć tej sytuacji, z drugiej strony, patrząc w liczbach bezwzględnych, stanowi to co najwyżej kilkadziesiąt głosów na komisję. Można założyć, że aby takie fałszerstwo mogło mieć wpływ na końcowy wyniki, powinno zostać przeprowadzone w tysiącach komisji (oczywiście poza przypadkiem, gdy różnica między kandydatami jest bardzo mała). Poniżej wykres reszt dla takiego przypadku (3 p.p.), gdy fałszerstw dokonano w 5000 komisji.
+Wprowadźmy takie fałszerstwa w 5000 komisji. Współczynnik R^2 dla modelu regresji wciąż jest bardzo wysoki (98,5%) i nie wskazuje na to, że coś jest nie tak. Wystarczy jednak zbadać rozkład reszt, na którym wyraźnie widać problem z symetrią.
 
 ```{r}
 #| include: false
 
-wyb_anom <- map(1:50, scenariusz3, d = 3, N = 5000)
-scen4_wyniki <- map_dfr(wyb_anom, wykryj_anomalie, .progress = TRUE)
-scen4_wyniki %>% 
-  summarise(across(everything(), mean)) # R2 ok
+wyb_anom <- map(1:20, scenariusz3, d = 3, N = 5000)
+wyniki <- map2_dfr(rep(wyb_anom, 2), rep(c(0.05, 1), each = 20),
+  wykryj_anomalie, procent = TRUE)
+
+wyniki %>% 
+  summarise(across(everything(), mean), .by = Alfa) # R2 ok
 
 m_lm <- lm(Trzaskowski_2 ~ Biedroń_1 + Bosak_1 + Hołownia_1 + Jakubiak_1 +
   Kamysz_1 + Piotrowski_1 + Tanajno_1 + Trzaskowski_1 + Witkowski_1 +
   Żółtek_1 + Nupr_roznica + Frekwencja_roznica, data = wyb_anom[[1]])
 
-out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 1e4)
+out_test <- outlierTest(m_lm, cutoff = Inf, n.max = Inf)
 out_df <- tibble(
   obs = names(out_test$rstudent),
   rstudent = out_test$rstudent,
@@ -714,6 +653,10 @@ out_df %>% summarise(100 * mean(rstudent < 0))
 ```
 
 ```{r}
+m_lm <- lm(Trzaskowski_2 ~ Biedroń_1 + Bosak_1 + Hołownia_1 + Jakubiak_1 +
+  Kamysz_1 + Piotrowski_1 + Tanajno_1 + Trzaskowski_1 + Witkowski_1 +
+  Żółtek_1 + Nupr_roznica + Frekwencja_roznica, data = wyb_anom[[1]])
+# summary(m_lm)
 wyb_anom[[1]] %>%
   mutate(Trzaskowski_pred = predict(m_lm)) %>%
   mutate(Reszta = Trzaskowski_2 - Trzaskowski_pred) %>%
@@ -724,7 +667,7 @@ wyb_anom[[1]] %>%
   scale_fill_manual(values = c("#0072B2", "#D55E00"))
 ```
 
-Widać wyraźnie problem z symetrią reszt. Co ważne, współczynnik R^2 jest wciąż bardzo wysoki (98,5%), dlatego tego typu fałszerstwa jesteśmy w stanie wykryć jedynie analizując rozkład reszt. Ewentualnie możemy spojrzeć na procent nieprawidłowości na korzyść jednego z kandydatów, zmieniając próg detekcji. Na poniższym wykresach 20 takich przypadków (3 p.p., 5000 komisji). Tym razem pokazuję wszystkie zamiast średniej, bo poza tym, że dana metoda powinna działać "średnio dobrze", musimy mieć pewność, że zadziała w jednej konkretnej sytuacji. I jak widać, wykresy są bardzo podobne i pokazują silną asymetrię: większość wykrytych anomalii na korzyść jednego kandydata.
+Możemy też spojrzeć na procent potencjalnych nieprawidlowości na korzyść jednego z kandydatów, zmieniając próg detekcji. Symuluję 20 takich sytuacji (3 p.p., 5000 komisji), ale tym razem nie uśredniam wyników, ale pokazuję wszystkie --- bo poza tym, że dana metoda powinna działać "średnio dobrze", musimy mieć pewność, że zadziała w jednej konkretnej sytuacji.
 
 ```{r}
 #| fig-height: 9
@@ -734,7 +677,7 @@ korzysc_ind <- function(prog_p, ind = 1) {
     Kamysz_1 + Piotrowski_1 + Tanajno_1 + Trzaskowski_1 + Witkowski_1 +
     Żółtek_1 + Nupr_roznica + Frekwencja_roznica, data = wyb_anom[[ind]])
   
-  out_test <- outlierTest(m_lm, cutoff = Inf, n.max = 1e4)
+  out_test <- outlierTest(m_lm, cutoff = Inf, n.max = Inf)
   out_df <- tibble(
     obs = names(out_test$rstudent),
     rstudent = out_test$rstudent,
@@ -745,7 +688,7 @@ korzysc_ind <- function(prog_p, ind = 1) {
     summarise(100 * mean(rstudent < 0)) %>% 
     pull()
 }
-progi <- 10^seq(-5, -4, length = 50)
+progi <- 10^seq(-4, -1.5, length = 50)
 
 korzysc <- function(ind) {
   tibble(ID = ind, Próg_p = progi, 
@@ -758,11 +701,14 @@ ggplot(korzysc_df, aes(Próg_p, Korzyść)) +
   labs(x = "Próg (p-wartość, skala logarytmiczna)", y = "", 
     title = "Procent nieprawidłowości na korzyść jednego\nkandydata") +
   geom_hline(yintercept = 50, linetype = 2) +
-  scale_x_log10(breaks = c(1e-5, 3e-5, 8e-5)) +
-  scale_y_continuous(limits = c(0, 100)) +
+  #scale_x_log10(breaks = c(1e-5, 3e-5, 8e-5)) +
+  scale_x_log10() +
+  #scale_y_continuous(limits = c(0, 100)) +
   facet_wrap(vars(ID), ncol = 4) +
   theme(axis.text = element_text(size = 10))
 ```
+
+Jak widać, wykresy są bardzo podobne i pokazują silną asymetrię: większość wykrytych anomalii na korzyść jednego kandydata.
 
 ## Zbiór treningowy i testowy
 
@@ -903,7 +849,256 @@ show_best(rf_tune)
 
 Przy pomocy zaproponowanego podejścia jesteśmy w stanie typować komisje, w których z dużym prawdopodobieństwem oficjalne wyniki są nieprawidłowe. Bazujemy przy tym na pewnym progu, który jest dostosowany do jakości modelu. Jeśli jest on dokładny, jesteśmy w stanie wykryć więcej anomalii (mamy większą pewność, że konkretna różnica między prognozą a oficjalnym wynikiem to nie jest kwestia przypadku, ale błędu lub oszustwa). To dostosowanie następuje automatycznie, wynika z teorii statystyki, dzięki czemu nasza ingerencja w ustalenie progu jest mocno ograniczona.
 
-Wytypowano 42 anomalie: 19 anomalii na korzyść Trzaskowskiego, 23 na korzyść Nawrockiego. Porównując wartości oficjalne z prognozowanymi (czyli zakładając, że w każdym przypadku doszło do nieprawidłowość i model wskazuje poprawny wynik), Trzaskowski stracił 1750 głosów.
+Wytypowano 97 anomalii: 50 anomalii na korzyść Trzaskowskiego, 47 na korzyść Nawrockiego. Porównując wartości oficjalne z prognozowanymi (czyli zakładając, że w każdym przypadku doszło do nieprawidłowość i model wskazuje poprawny wynik), Trzaskowski stracił 1051 głosów.
+
+<!-- ## Walidacja -->
+
+<!-- Model JH -->
+
+<!-- ```{r} -->
+<!-- wynikiJH <- readxl::read_excel("Model_JH_a_prokuratura.xlsx", skip = 2) -->
+<!-- wynikiJH <- wynikiJH %>%  -->
+<!--   select(Gmina, `Numer komisji`, `OGÓŁEM...5`, `Rafał Trzaskowski...7`, -->
+<!--     `Niedomiar Trzaskowskiego wedle modelu`, `Rafał Trzaskowski...14`) %>%  -->
+<!--   set_names(c("Gmina", "Komisja", "N", "Trzask", "Model", "Wynik")) %>%  -->
+<!--   drop_na(Komisja) %>%  -->
+<!--   mutate(Wynik = ifelse(is.na(Wynik), 0, Wynik)) %>%  -->
+<!--   mutate(Trzask_podane = Trzask/N*100, Trzask_prawdziwe = (Trzask + Wynik)/N*100, -->
+<!--     Trzask_JH = (Trzask + Model)/N*100) -->
+
+<!-- wynikiJH %>%  -->
+<!--   filter(! Gmina %in% c("m. Ostrów Mazowiecka", "gm. Łęczna")) %>%  -->
+<!--   mutate(Różnica = Trzask_prawdziwe - Trzask_JH) %>%  -->
+<!--   summarise(mean(Model - Wynik), mean(abs(Model - Wynik)), -->
+<!--     mean(Trzask_JH - Trzask_prawdziwe), mean(abs(Trzask_JH - Trzask_prawdziwe))) -->
+
+<!-- # wyb25proc %>% filter(Gmina == "gm. Choczewo") %>% view() -->
+<!-- # wyb20proc %>% filter(Gmina == "gm. Choczewo") %>% view() -->
+<!-- ``` -->
+
+<!-- Mój model. Chcę porównać się ze wszystkimi zbadamy komisjami, więc buduję model tak, jak budowałem, ale następnie stosuję na wszystkich danych. -->
+
+<!-- ```{r} -->
+<!-- wyniki <- readxl::read_excel("data/Tabela_250_okw.xlsx", skip = 2) -->
+<!-- wyniki <- wyniki %>%  -->
+<!--   select(Gmina, `Numer komisji`, `Siedziba komisji`, `OGÓŁEM...5`, `OGÓŁEM...8`, -->
+<!--     `Rafał Trzaskowski...7`, `Rafał Trzaskowski...10`) %>%  -->
+<!--   set_names(c("Gmina", "Komisja", "Siedziba", "N_podane", "N_prawdziwe", -->
+<!--     "Trzask_podane", "Trzask_prawdziwe")) %>%  -->
+<!--   drop_na(Komisja) %>%  -->
+<!--   mutate(Komisja = as.numeric(Komisja)) %>%  -->
+<!--   mutate(Gmina = str_replace(Gmina, ". ", ".")) %>%  -->
+<!--   mutate(Gmina = case_match(Gmina, -->
+<!--     "Mysiadło" ~ "gm.Lesznowola", # miejscowość zamiast gminy -->
+<!--     "Otwock" ~ "m.Otwock", -->
+<!--     .default = Gmina -->
+<!--   )) -->
+<!-- # korekta, bo prokuratura źle podała -->
+<!-- wyniki <- wyniki %>%  -->
+<!--   mutate(Trzask_prawdziwe = ifelse(Gmina == "m.Ostrów Mazowiecka",  -->
+<!--     Trzask_prawdziwe-99, Trzask_prawdziwe)) %>%  -->
+<!--   mutate(Trzask_prawdziwe = ifelse(Gmina == "gm.Łęczna",  -->
+<!--     Trzask_prawdziwe-50, Trzask_prawdziwe))  -->
+<!-- # zamian wszystkich głosów o tylko 17, zamiana kupki głosów 48, -->
+<!-- # w 1 przypadku nie zaliczono 20 głosów na Trzask, dla Nawr było ok -->
+
+<!-- wyb25_lm <- wyb25proc %>% -->
+<!--   mutate(Nupr_roznica = (Nupr_2 / Nupr_1 - 1) * 100) %>% # -->
+<!--   mutate(Frekwencja_roznica =  (N_2 / Nupr_2 - N_1 / Nupr_1) * 100) %>%  -->
+<!--   mutate(N_roznica = (N_2 - N_1) / N_1 * 100) %>%  -->
+<!--   filter( -->
+<!--     N_roznica > -25, N_roznica < 25, -->
+<!--     Nupr_roznica > -25, Nupr_roznica < 25, -->
+<!--     Frekwencja_roznica > -25, Frekwencja_roznica < 25 -->
+<!--   ) %>% -->
+<!--   filter(N_2 >= 200) # -->
+<!-- m_lm <- lm(Trzaskowski_2 ~ Bartoszewicz_1 + Biejat_1 + Braun_1 + Hołownia_1 +  -->
+<!--   Jakubiak_1 + Maciak_1 + Mentzen_1 + Senyszyn_1 + Stanowski_1 + Trzaskowski_1 + -->
+<!--     Woch_1 + Zandberg_1 + Nupr_roznica + Frekwencja_roznica, data = wyb25_lm) -->
+<!-- out_test <- outlierTest(m_lm, cutoff = Inf, n.max = Inf) -->
+<!-- out_df <- tibble( -->
+<!--   obs = names(out_test$rstudent), -->
+<!--   rstudent = abs(out_test$rstudent), -->
+<!--   p = out_test$p, -->
+<!--   bonf.p = out_test$bonf.p -->
+<!-- ) %>%  -->
+<!--   mutate(bh.p = p.adjust(p, method = "BH")) -->
+<!-- out_df %>% filter(bonf.p < 0.05) # 42 obs. -->
+<!-- out_df %>% filter(bh.p < 0.05) # 97 obs. -->
+
+<!-- wyb25_lm <- wyb25_lm %>% -->
+<!--   mutate(obs = as.character(row_number())) %>%  -->
+<!--   mutate(Trzaskowski_pred = predict(m_lm)) %>%  -->
+<!--   left_join(out_df, by = "obs") %>%  -->
+<!--   arrange(desc(rstudent)) %>%  -->
+<!--   select(Kod, Komisja, Gmina, Siedziba, rstudent, Trzaskowski_pred, -->
+<!--     Trzaskowski_proc = Trzaskowski_2, Nawrocki_proc = Nawrocki_2, rstudent:bh.p) %>%  -->
+<!--   left_join(wyb25 %>% select(Kod, Komisja,  -->
+<!--     Trzaskowski_N = Trzaskowski_2, Nawrocki_N = Nawrocki_2), by = c("Kod", "Komisja")) %>%  -->
+<!--   mutate(Trzaskowski_pred_N = Trzaskowski_pred/100 * (Trzaskowski_N + Nawrocki_N)) %>%  -->
+<!--   mutate(Nawrocki_pred_N = (1 - Trzaskowski_pred/100) * (Trzaskowski_N + Nawrocki_N)) %>%  -->
+<!--   mutate(Różnica_pp = Trzaskowski_proc - Trzaskowski_pred)  -->
+
+<!-- wyb25_lm <- wyb25_lm %>%  -->
+<!--   mutate(Gmina = str_replace(Gmina, ". ", ".")) %>%  -->
+<!--   # muszę parę usunąć przed połączeniem, bo podwójne gminy i nr komisji -->
+<!--   # (gmina i komisja nie są jednoznacznym ID) -->
+<!--   filter(! Siedziba %in% c("Szkoła Podstawowa, Żabno 6, 63-112 Brodnica", -->
+<!--     "Szkoła Podstawowa Nr 2 im. Orła Białego w Chotomowie, ul. Partyzantów 23, 05-123 Chotomów", -->
+<!--     "Szkoła Podstawowa im. Jana Pawła II w Grodziszczu, Grodziszcze 63A, 58-112 Grodziszcze", -->
+<!--     "Strażnica OSP w Chruścinie, Chruścin 29A, 62-660 Dąbie", -->
+<!--     "Szkoła Podstawowa im. Tadeusza Kutrzeby w Bierzwiennej Długiej, Bierzwienna Długa 76, 62-650 Kłodawa", -->
+<!--     "Świetlica Wiejska w Podborzu, Podborze 26, 33-210 Olesno", -->
+<!--     "Świetlica Wiejska w Wólce Krzykowskiej, Wólka Krzykowska 14C, 97-225 Ujazd", -->
+<!--     "Szkoła Podstawowa im. Adama Mickiewicza, ul. Szkolna 14, 72-130 Maszewo", -->
+<!--     "Publiczna Szkoła Podstawowa im. ks. Jana Twardowskiego w Kamieniu, Kamień 64, 26-332 Sławno", -->
+<!--     "Świetlica Wiejska w Sangrodzu, Sangrodz ul. Wspólna 4, 97-225 Ujazd" -->
+<!--   )) %>%  -->
+<!--   full_join(wyniki %>% select(-Siedziba), by = c("Gmina", "Komisja")) -->
+
+<!-- # moja lista: -->
+<!-- wyb25_lm %>%  -->
+<!--   drop_na(p, Trzask_prawdziwe) %>%  -->
+<!--   summarise(n = n(), MError = mean(Trzask_prawdziwe - Trzaskowski_pred_N), -->
+<!--     MAE = mean(abs(Trzask_prawdziwe - Trzaskowski_pred_N))) -->
+<!-- # 130 komisji, pozostałe odpadły przez N>=200 -->
+
+<!-- wyb25_lm %>%  -->
+<!--   drop_na(p, Trzask_prawdziwe) %>%  -->
+<!--   filter(bh.p < 0.05) -->
+<!-- # Wskazałem 97 (BH) komisji, z czego policzonych zostało 75 -->
+
+<!-- # Jak dużo rzeczywistych nieprawidłowości wskazałem? -->
+<!-- nieprawidl <- wyb25_lm %>%  -->
+<!--   filter(abs(Trzask_podane - Trzask_prawdziwe) >= 5) # było 66 -->
+<!-- nieprawidl %>% drop_na(p) # dla 3 w ogóle nie policzyłem p-wartości (N>=200) -->
+<!-- # tak: gm.Inowrocław, gm.Ziębice oraz być może Wierzchowo (8 głosów różnicy) -->
+<!-- nieprawidl %>% filter(bonf.p < 0.05) # 30 wykryte przy pomocy Bonf -->
+<!-- nieprawidl %>% filter(bh.p < 0.05) # 46 wykrytych przy pomocy BH -->
+<!-- nieprawidl %>% filter(bh.p > 0.05) # 17 przeoczonych -->
+<!-- # Jaki były p dla tych przeoczonych? -->
+<!-- nieprawidl %>% filter(bh.p > 0.05) %>% -->
+<!--   select(Gmina, p, bh.p, Trzask_podane, Trzask_prawdziwe) -->
+<!-- ``` -->
+
+<!-- Wskazałem 97, ale zbadanych zostało 75, Z tego w 46 rzeczywiście były nieprawidłowości, 11 były ok, a 17 przeoczyłem (bh.p na granicy poza 1 przypadkiem). -->
+
+<!-- Czy da się oszacować, ile było błędów we wszystkich komisjach? Najlepiej zrobić to na podstawie modelu JH, tak że w pierwszej kolejności muszę go odtworzyć. -->
+
+<!-- ```{r} -->
+<!-- wyb25_lm <- wyb25proc %>% -->
+<!--   filter(Typ_obwodu == "stały")  -->
+<!-- m_lm <- lm(Nawrocki_2 ~ Bartoszewicz_1 + Biejat_1 + Braun_1 + Hołownia_1 +  -->
+<!--   Jakubiak_1 + Maciak_1 + Mentzen_1 + Senyszyn_1 + Stanowski_1 + Nawrocki_1 + -->
+<!--   Woch_1 + Zandberg_1 + Nniew_1, data = wyb25_lm) -->
+<!-- summary(m_lm) -->
+
+<!-- preds <- predict(m_lm, se.fit = TRUE) -->
+<!-- sigma <- summary(m_lm)$sigma -->
+<!-- pred_sd <- sqrt(preds$se.fit^2 + sigma^2) -->
+<!-- wyb25_lm <- wyb25_lm %>% -->
+<!--   mutate(Nawrocki_pred = preds$fit) %>%  -->
+<!--   mutate(Reszta = abs(Nawrocki_2 - Nawrocki_pred)) %>%  -->
+<!--   mutate(Reszta_stand = Reszta/ pred_sd) %>%  -->
+<!--   mutate(Trzaskowski_pred = 100 - Nawrocki_pred) %>%  -->
+<!--   mutate(Nawrocki_pred_N = (1 - Trzaskowski_pred/100) * N_2) %>%  -->
+<!--   mutate(Trzaskowski_pred_N = N_2 - Nawrocki_pred_N) %>%  -->
+<!--   select(-(c(Powiat, Województwo, Typ_obwodu:Nniew0x_2))) -->
+
+<!-- anomalie <- wyb25_lm %>%  -->
+<!--   mutate(Gmina = str_replace(Gmina, ". ", ".")) %>%  -->
+<!--   # muszę parę usunąć przed połączeniem, bo podwójne gminy i nr komisji -->
+<!--   # (gmina i komisja nie są jednoznacznym ID) -->
+<!--   filter(! Siedziba %in% c("Szkoła Podstawowa, Żabno 6, 63-112 Brodnica", -->
+<!--     "Szkoła Podstawowa Nr 2 im. Orła Białego w Chotomowie, ul. Partyzantów 23, 05-123 Chotomów", -->
+<!--     "Szkoła Podstawowa im. Jana Pawła II w Grodziszczu, Grodziszcze 63A, 58-112 Grodziszcze", -->
+<!--     "Strażnica OSP w Chruścinie, Chruścin 29A, 62-660 Dąbie", -->
+<!--     "Szkoła Podstawowa im. Tadeusza Kutrzeby w Bierzwiennej Długiej, Bierzwienna Długa 76, 62-650 Kłodawa", -->
+<!--     "Świetlica Wiejska w Podborzu, Podborze 26, 33-210 Olesno", -->
+<!--     "Świetlica Wiejska w Wólce Krzykowskiej, Wólka Krzykowska 14C, 97-225 Ujazd", -->
+<!--     "Szkoła Podstawowa im. Adama Mickiewicza, ul. Szkolna 14, 72-130 Maszewo", -->
+<!--     "Publiczna Szkoła Podstawowa im. ks. Jana Twardowskiego w Kamieniu, Kamień 64, 26-332 Sławno", -->
+<!--     "Świetlica Wiejska w Sangrodzu, Sangrodz ul. Wspólna 4, 97-225 Ujazd" -->
+<!--   )) %>%  -->
+<!--   inner_join(wyniki %>% select(-Siedziba), by = c("Gmina", "Komisja")) %>%  -->
+<!--   arrange(desc(Reszta_stand)) %>%  -->
+<!--   mutate(Różnica = abs(Trzask_podane - Trzask_prawdziwe)) %>%  -->
+<!--   mutate(Błąd = ifelse(Różnica >= 5, 1, 0)) %>%  -->
+<!--   mutate(Trzask_prawdziwe_proc = Trzask_prawdziwe / N_prawdziwe * 100) %>%  -->
+<!--   mutate(Różnica_pp = abs(Trzaskowski_2 - Trzask_prawdziwe_proc)) %>%  -->
+<!--   filter(Reszta_stand >= 2.99) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- count(anomalie, Błąd) -->
+<!-- ggplot(anomalie, aes(Reszta_stand, fill = as.factor(Błąd))) + -->
+<!--   geom_density(alpha = 0.6) -->
+<!-- m_glm <- glm(Błąd ~ log(Reszta_stand), data = anomalie, family = "binomial") -->
+<!-- summary(mgcv::gam(Błąd ~ log(Reszta_stand), data = anomalie,  -->
+<!--   family = "binomial")) # R2 21% -->
+<!-- anomalie <- anomalie %>%  -->
+<!--   mutate(Błąd_pred = predict(m_glm, type = "response")) -->
+
+<!-- wszystkie_bledy <- wyb25_lm %>%  -->
+<!--   mutate(Błąd_pred = predict(m_glm, wyb25_lm, type = "response")) -->
+<!-- wszystkie_bledy %>%  -->
+<!--   slice_max(Błąd_pred, n = 10) %>%  -->
+<!--   select(Gmina, Błąd_pred) -->
+<!-- wszystkie_bledy %>%  -->
+<!--   summarise(N = n(), suma_prawdop = sum(Błąd_pred)) %>%  -->
+<!--   mutate(proc_nieprawid = suma_prawdop / N * 100) -->
+<!-- # nieprawidłowości w 204 komisjach? (0.7%) -->
+
+<!-- ggplot(anomalie, aes(Reszta_stand, Różnica_pp)) + -->
+<!--   geom_point(alpha = 0.6, size = 2) + -->
+<!--   geom_smooth(method = "lm", fullrange = TRUE, -->
+<!--     data = anomalie %>% filter(Różnica > 5)) + -->
+<!--   scale_x_reverse(limits = c(NA, 0)) + -->
+<!--   geom_hline(yintercept = 0, linetype = 2) + -->
+<!--   labs(y = "Rzeczywista różnica głosów [p.p.]", x = "Standaryzowany błąd przewidywania") + -->
+<!--   theme( -->
+<!--     axis.line = element_blank(), -->
+<!--     axis.ticks = element_blank(), -->
+<!--     panel.grid.major = element_line(color = "gray90", linewidth = 0.5) -->
+<!--   ) -->
+<!-- lm(Różnica_pp ~ Reszta_stand, data = anomalie %>% filter(Różnica > 5)) -->
+<!-- # -1.949 + 2.481x = 0 -->
+<!-- # x = 1.949/2.481 = 0.786 -->
+
+<!-- anomalie %>% -->
+<!--   filter(Różnica > 5) %>%  -->
+<!--   arrange(desc(Reszta_stand)) %>%  -->
+<!--   mutate(n_nieprawidl = row_number()) %>%  -->
+<!--   ggplot(aes(Reszta_stand, n_nieprawidl)) + -->
+<!--   geom_point(alpha = 0.6, size = 2) + -->
+<!--   geom_smooth(method = "lm", fullrange = TRUE, formula = y ~ poly(x, 5)) + -->
+<!--   scale_x_reverse(limits = c(NA, 0)) + -->
+<!--   labs(y = "Skumulowana liczba komisji z wykrytymi\nnieprawidłowościami", -->
+<!--     x = "Standaryzowany błąd przewidywania") + -->
+<!--   theme( -->
+<!--     axis.line = element_blank(), -->
+<!--     axis.ticks = element_blank(), -->
+<!--     panel.grid.major = element_line(color = "gray90", linewidth = 0.5) -->
+<!--   ) + -->
+<!--   geom_vline(xintercept = 0, linetype = 2) -->
+<!-- # m <- anomalie %>% -->
+<!-- #   filter(Różnica > 5) %>%  -->
+<!-- #   arrange(desc(Reszta_stand)) %>%  -->
+<!-- #   mutate(n_nieprawidl = row_number()) %>%  -->
+<!-- #   lm(n_nieprawidl ~ poly(Reszta_stand, 5), data = .) -->
+<!-- # predict(m, tibble(Reszta_stand = 0.786)) -->
+
+<!-- anomalie %>%  -->
+<!--   arrange(desc(Reszta_stand)) %>%  -->
+<!--   mutate(N = row_number()) %>%  -->
+<!--   mutate(Błąd_ecdf = cumsum(Błąd) / N) %>%  -->
+<!--   #mutate(Błąd_lcdf = cumsum(Błąd_pred) / N) %>%  -->
+<!--   ggplot(aes(Reszta_stand, Błąd_ecdf)) + -->
+<!--   geom_point(alpha = 0.6, size = 2) + -->
+<!--   scale_x_reverse(limits = c(NA, 0)) + -->
+<!--   scale_y_continuous(limits = c(0, 1)) + -->
+<!--   labs(y = "Skumulowane prawdopodobieństwo\nnieprawidłowości") -->
+<!-- ``` -->
 
 ## Referencje
 
